@@ -1,9 +1,10 @@
 class Cpdr < Formula
-    desc "A cool Go script"
-    homepage "https://github.com/ihaveasegway/cpdr"
-    url "https://github.com/ihaveasegway/cpdr/releases/download/v1.0.3/cpdr-1.0.3.tar.gz"
-    sha256 "<SHA256_HASH>" # Replace with the hash
-    version "1.0.3"
+    desc "CLI tool to copy directories recursively"
+    homepage "https://github.com/IHaveASegway/cpdr"
+    version "0.0.3"
+    url "https://github.com/IHaveASegway/cpdr/archive/refs/heads/main.tar.gz"
+    sha256 "19a19a09c9efeb691dcffd78f3640802fb40e4c55bc8e920116842e968b77633"
+    license "MIT"
   
     depends_on "go" => :build
   
@@ -13,6 +14,6 @@ class Cpdr < Formula
     end
   
     test do
-      assert_match "expected output", shell_output("#{bin}/cpdr") # Adjust to 1.0.3’s output
+      assert_match "cpdr", shell_output("#{bin}/cpdr --help 2>&1", 1)
     end
   end
