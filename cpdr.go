@@ -20,7 +20,7 @@ func shouldIgnore(path string, ignorePatterns []string) bool {
 	// Combine hardcoded and user-provided ignore patterns
 	allIgnore := append(hardcodedIgnore, ignorePatterns...)
 	for _, pattern := range allIgnore {
-		if strings.Contains(path, pattern) {
+		if pattern != "" && strings.Contains(path, pattern) {
 			return true
 		}
 	}
@@ -28,7 +28,7 @@ func shouldIgnore(path string, ignorePatterns []string) bool {
 }
 
 // generateTree builds a recursive directory tree representation with depth control
-func generateTree(path string, prefix string, isLast bool, depth int, currentDepth int, ignorePatterns []string) string {
+func generateTree(path string, prefix string, isLast bool, depth int, currentDepth int, ignorePatterns []string, debug bool) string {
 	if shouldIgnore(path, ignorePatterns) || (depth >= 0 && currentDepth > depth) {
 		return ""
 	}
@@ -37,6 +37,9 @@ func generateTree(path string, prefix string, isLast bool, depth int, currentDep
 	basename := filepath.Base(path)
 	info, err := os.Stat(path)
 	if err != nil {
+		if debug {
+			log.Printf("Error accessing path %s: %v", path, err)
+		}
 		return ""
 	}
 
@@ -55,6 +58,9 @@ func generateTree(path string, prefix string, isLast bool, depth int, currentDep
 
 		contents, err := os.ReadDir(path)
 		if err != nil {
+			if debug {
+				log.Printf("Error reading directory %s: %v", path, err)
+			}
 			return output
 		}
 		sort.Slice(contents, func(i, j int) bool {
@@ -64,7 +70,7 @@ func generateTree(path string, prefix string, isLast bool, depth int, currentDep
 		for i, entry := range contents {
 			nextPath := filepath.Join(path, entry.Name())
 			isLastEntry := (i == len(contents)-1)
-			output += generateTree(nextPath, nextPrefix, isLastEntry, depth, currentDepth+1, ignorePatterns)
+			output += generateTree(nextPath, nextPrefix, isLastEntry, depth, currentDepth+1, ignorePatterns, debug)
 		}
 	} else {
 		symbol := "└── "
@@ -99,6 +105,7 @@ func main() {
 	var ignore string
 	var depth int
 	var format string
+	var debug bool
 	flag.BoolVar(&structure, "s", false, "Generate only directory structure")
 	flag.BoolVar(&structure, "structure", false, "Generate only directory structure (alias for -s)")
 	flag.StringVar(&ignore, "i", "", "Comma-separated list of patterns to ignore")
@@ -107,15 +114,25 @@ func main() {
 	flag.IntVar(&depth, "depth", -1, "Maximum depth for directory tree (-1 for no limit) (alias for -d)")
 	flag.StringVar(&format, "f", "text", "Output format: text or json")
 	flag.StringVar(&format, "format", "text", "Output format: text or json (alias for -f)")
+	flag.BoolVar(&debug, "debug", false, "Enable debug output")
 
 	// Parse flags
 	flag.Parse()
 	paths := flag.Args()
 
+	if len(paths) == 0 {
+		fmt.Println("Error: No paths specified")
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	// Split ignore patterns into a slice
-	ignorePatterns := strings.Split(ignore, ",")
-	for i := range ignorePatterns {
-		ignorePatterns[i] = strings.TrimSpace(ignorePatterns[i])
+	ignorePatterns := []string{}
+	if ignore != "" {
+		ignorePatterns = strings.Split(ignore, ",")
+		for i := range ignorePatterns {
+			ignorePatterns[i] = strings.TrimSpace(ignorePatterns[i])
+		}
 	}
 
 	// Use a strings.Builder to accumulate output
@@ -169,8 +186,15 @@ func main() {
 	for _, dir := range topLevelDirs {
 		fmt.Fprintf(&output, "\nTree for %s:\n", dir)
 		if format == "text" {
-			tree := generateTree(dir, "", true, depth, 0, ignorePatterns)
-			fmt.Fprint(&output, tree)
+			tree := generateTree(dir, "", true, depth, 0, ignorePatterns, debug)
+			if tree == "" {
+				if debug {
+					log.Printf("Warning: Empty tree generated for %s", dir)
+				}
+				fmt.Fprintf(&output, "(empty or inaccessible)\n")
+			} else {
+				fmt.Fprint(&output, tree)
+			}
 		} else if format == "json" {
 			// Placeholder for JSON output
 			fmt.Fprintln(&output, "JSON output not implemented yet.")
@@ -212,7 +236,13 @@ func main() {
 	}
 
 	// Copy the output to the clipboard
-	err := clipboard.WriteAll(output.String())
+	outputStr := output.String()
+	if debug {
+		fmt.Println("Debug: Output to be copied to clipboard:")
+		fmt.Println(outputStr)
+	}
+
+	err := clipboard.WriteAll(outputStr)
 	if err != nil {
 		log.Printf("Failed to set clipboard: %v", err)
 	} else {
