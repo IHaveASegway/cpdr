@@ -19,8 +19,30 @@ func shouldIgnore(path string, ignorePatterns []string) bool {
 	hardcodedIgnore := []string{".terraform", ".module", "__pycache__"}
 	// Combine hardcoded and user-provided ignore patterns
 	allIgnore := append(hardcodedIgnore, ignorePatterns...)
+
+	// Get path components for directory structure matching
+	pathComponents := strings.Split(filepath.ToSlash(path), "/")
+	dirname := filepath.Base(path)
+
 	for _, pattern := range allIgnore {
-		if pattern != "" && strings.Contains(path, pattern) {
+		if pattern == "" {
+			continue
+		}
+
+		// Check for exact directory name matches (directory structure)
+		if pattern == dirname {
+			return true
+		}
+
+		// Check if pattern is in path components (directory structure)
+		for _, component := range pathComponents {
+			if component == pattern {
+				return true
+			}
+		}
+
+		// Also keep the existing substring check for backward compatibility
+		if strings.Contains(path, pattern) {
 			return true
 		}
 	}
@@ -106,23 +128,63 @@ func main() {
 	var depth int
 	var format string
 	var debug bool
-	flag.BoolVar(&structure, "s", false, "Generate only directory structure")
-	flag.BoolVar(&structure, "structure", false, "Generate only directory structure (alias for -s)")
-	flag.StringVar(&ignore, "i", "", "Comma-separated list of patterns to ignore")
-	flag.StringVar(&ignore, "ignore", "", "Comma-separated list of patterns to ignore (alias for -i)")
-	flag.IntVar(&depth, "d", -1, "Maximum depth for directory tree (-1 for no limit)")
-	flag.IntVar(&depth, "depth", -1, "Maximum depth for directory tree (-1 for no limit) (alias for -d)")
-	flag.StringVar(&format, "f", "text", "Output format: text or json")
-	flag.StringVar(&format, "format", "text", "Output format: text or json (alias for -f)")
-	flag.BoolVar(&debug, "debug", false, "Enable debug output")
 
-	// Parse flags
-	flag.Parse()
-	paths := flag.Args()
+	// Create a new FlagSet that doesn't use the default flag parsing
+	flagSet := flag.NewFlagSet("cpdr", flag.ContinueOnError)
+	flagSet.BoolVar(&structure, "s", false, "Generate only directory structure")
+	flagSet.BoolVar(&structure, "structure", false, "Generate only directory structure (alias for -s)")
+	flagSet.StringVar(&ignore, "i", "", "Comma-separated list of patterns to ignore (can be directory names or path patterns)")
+	flagSet.StringVar(&ignore, "ignore", "", "Comma-separated list of patterns to ignore (can be directory names or path patterns) (alias for -i)")
+	flagSet.IntVar(&depth, "d", -1, "Maximum depth for directory tree (-1 for no limit)")
+	flagSet.IntVar(&depth, "depth", -1, "Maximum depth for directory tree (-1 for no limit) (alias for -d)")
+	flagSet.StringVar(&format, "f", "text", "Output format: text or json")
+	flagSet.StringVar(&format, "format", "text", "Output format: text or json (alias for -f)")
+	flagSet.BoolVar(&debug, "debug", false, "Enable debug output")
+
+	// Custom flag parsing to handle flags at any position
+	var paths []string
+	args := os.Args[1:]
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// This is a flag, so parse it and its value if needed
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				// Check if this flag needs a value
+				switch arg {
+				case "-i", "--ignore", "-d", "--depth", "-f", "--format":
+					// These flags need values, so skip the next arg
+					err := flagSet.Parse([]string{arg, args[i+1]})
+					if err != nil {
+						fmt.Printf("Error parsing flag %s: %v\n", arg, err)
+						os.Exit(1)
+					}
+					i++ // Skip the next argument as it's the value for this flag
+				default:
+					// Boolean flags don't need values
+					err := flagSet.Parse([]string{arg})
+					if err != nil {
+						fmt.Printf("Error parsing flag %s: %v\n", arg, err)
+						os.Exit(1)
+					}
+				}
+			} else {
+				// Flag with no value or last argument
+				err := flagSet.Parse([]string{arg})
+				if err != nil {
+					fmt.Printf("Error parsing flag %s: %v\n", arg, err)
+					os.Exit(1)
+				}
+			}
+		} else {
+			// This is a path
+			paths = append(paths, arg)
+		}
+	}
 
 	if len(paths) == 0 {
 		fmt.Println("Error: No paths specified")
-		flag.Usage()
+		flagSet.Usage()
 		os.Exit(1)
 	}
 
